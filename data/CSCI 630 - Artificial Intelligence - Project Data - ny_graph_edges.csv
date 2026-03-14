@@ -1,0 +1,43 @@
+from_city,to_city,highway,miles,speed_mph,road_type,am_peak_mean,am_peak_std,off_peak_mean,off_peak_std,pm_peak_mean,pm_peak_std,free_flow_time_min
+New York City,Yonkers,I-87,15,45,interstate,2.8,0.35,1.1,0.35,3.1,0.35,20
+New York City,Yonkers,Hutchinson Pkwy,18,40,parkway,2.5,0.35,1.1,0.35,2.7,0.35,27
+New York City,Yonkers,I-278,16,35,interstate,3,0.35,1.2,0.35,3.2,0.35,27
+New York City,Long Island City,I-495,8,30,interstate,3.5,0.35,1.3,0.35,3.8,0.35,16
+New York City,Long Island City,BQE/I-278,9,28,interstate,3.6,0.35,1.4,0.35,3.9,0.35,19
+Buffalo,Rochester,I-90,74,65,interstate,1.1,0.05,1,0.05,1.2,0.05,68
+Buffalo,Rochester,NY-33,78,50,state route,1.2,0.05,1,0.05,1.2,0.05,94
+Buffalo,Niagara Falls,I-190,18,65,interstate,1.5,0.15,1,0.15,1.6,0.15,17
+Buffalo,Niagara Falls,NY-31,22,45,state route,1.2,0.05,1,0.05,1.3,0.05,29
+Buffalo,Tonawanda,I-290,8,65,interstate,1.6,0.15,1,0.15,1.7,0.15,7
+Rochester,Syracuse,I-90,85,65,interstate,1.1,0.05,1,0.05,1.2,0.05,78
+Rochester,Syracuse,NY-5,92,45,state route,1.1,0.05,1,0.05,1.2,0.05,123
+Rochester,Ithaca,NY-89,60,45,state route,1.1,0.05,1,0.05,1.1,0.05,80
+Yonkers,White Plains,I-87,10,55,interstate,2.4,0.35,1.1,0.35,2.6,0.35,11
+Yonkers,White Plains,Bronx River Pkwy,12,40,parkway,2.2,0.35,1.1,0.35,2.4,0.35,18
+Yonkers,Bronx,I-87,6,40,interstate,2.9,0.35,1.2,0.35,3,0.35,11
+Syracuse,Utica,I-90,50,65,interstate,1.1,0.05,1,0.05,1.1,0.05,46
+Syracuse,Utica,NY-5,54,45,state route,1.1,0.05,1,0.05,1.1,0.05,72
+Syracuse,Binghamton,I-81,70,65,interstate,1.2,0.05,1,0.05,1.3,0.05,65
+Albany,Schenectady,I-90,16,65,interstate,1.7,0.15,1,0.15,1.8,0.15,15
+Albany,Schenectady,US-20,18,45,US highway,1.5,0.15,1,0.15,1.6,0.15,24
+Albany,Troy,I-787,8,55,interstate,1.8,0.15,1.1,0.15,1.9,0.15,9
+Albany,Troy,NY-2,10,40,state route,1.6,0.15,1,0.15,1.7,0.15,15
+Albany,Saratoga Springs,I-87,32,65,interstate,1.2,0.05,1,0.05,1.3,0.05,30
+Utica,Rome,I-90,16,65,interstate,1.1,0.05,1,0.05,1.1,0.05,15
+Utica,Rome,NY-49,14,45,state route,1.1,0.05,1,0.05,1.1,0.05,19
+Binghamton,Ithaca,NY-79,35,45,state route,1.1,0.05,1,0.05,1.2,0.05,47
+Binghamton,Elmira,I-86,52,65,interstate,1.1,0.05,1,0.05,1.2,0.05,48
+Schenectady,Troy,I-890,10,55,interstate,1.6,0.15,1,0.15,1.7,0.15,11
+Saratoga Springs,Glens Falls,I-87,28,65,interstate,1.1,0.05,1,0.05,1.2,0.05,26
+Long Island City,Hempstead,I-495,25,45,interstate,2.8,0.35,1.2,0.35,3,0.35,33
+Long Island City,Flushing,I-678,5,40,interstate,2.5,0.35,1.1,0.35,2.6,0.35,8
+Flushing,Hempstead,I-495,22,45,interstate,2.7,0.35,1.2,0.35,2.9,0.35,29
+Ithaca,Elmira,NY-13,32,45,state route,1.1,0.05,1,0.05,1.1,0.05,43
+Elmira,Corning,I-86,19,65,interstate,1.1,0.05,1,0.05,1.1,0.05,18
+Tonawanda,Niagara Falls,I-290/NY-31,12,55,interstate,1.3,0.05,1,0.05,1.4,0.05,13
+Tonawanda,Lockport,NY-31,18,45,state route,1.1,0.05,1,0.05,1.1,0.05,24
+Hempstead,Amityville,NY-110,18,45,state route,1.8,0.15,1.1,0.15,2,0.15,24
+New Rochelle,Bronx,I-95,10,40,interstate,2.9,0.35,1.2,0.35,3.1,0.35,15
+New Rochelle,Bronx,Hutchinson Pkwy,12,40,parkway,2.6,0.35,1.1,0.35,2.8,0.35,18
+White Plains,Tarrytown,I-87,10,55,interstate,1.9,0.15,1,0.15,2.1,0.15,11
+Schenectady,Saratoga Springs,I-87,28,65,interstate,1.2,0.05,1,0.05,1.3,0.05,26
