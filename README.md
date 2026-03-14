@@ -24,6 +24,8 @@ The cities span 5 geographic regions: NYC Metro, Western NY, Central NY, Capital
 
 Each road edge includes congestion multipliers with a mean and standard deviation for three time periods — AM peak, off-peak, and PM peak — to model the uncertainty in travel times.
 
+> 📊 **View the dataset here:** [NY Traffic Graph Data](https://docs.google.com/spreadsheets/d/164fPYnmcTjsCdTGS8qHgueLM4mZT1Rs4fXORk0Mni_A/edit?usp=sharing)
+
 ### Data Structures
 
 Four classes were implemented to represent the graph:
