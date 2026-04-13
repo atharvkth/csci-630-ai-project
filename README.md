@@ -1,4 +1,5 @@
 # Uncertainty-Aware Traffic Routing Using Search-Based Algorithms
+
 ### CSCI-630 | Artificial Intelligence
 
 ---
@@ -32,10 +33,11 @@ Four classes were implemented to represent the graph:
 
 - **`TrafficDistribution`** — Represents the uncertainty in travel time for a given time period using a Gaussian model (mean + standard deviation). Supports both deterministic (mean) and probabilistic (sampled) travel time calculations.
 - **`Edge`** — Represents a road between two cities, storing distance, speed, road type, and three `TrafficDistribution` objects for each time period.
-- **`Node`** — Represents a city, storing its name, population, region, and GPS coordinates. Implements the Haversine formula to compute straight-line distances between cities, used as an admissible heuristic for A* search.
+- **`Node`** — Represents a city, storing its name, population, region, and GPS coordinates. Implements the Haversine formula to compute straight-line distances between cities, used as an admissible heuristic for A\* search.
 - **`TrafficGraph`** — Represents the full road network as an undirected adjacency list graph. Loads nodes and edges from CSV files and supports neighbor lookups, node retrieval, and edge queries between cities.
 
 The graph was loaded and verified successfully:
+
 ```
 Loaded 28 nodes.
 Loaded 84 edges.  ← 42 roads × 2 directions (undirected graph)
@@ -49,33 +51,65 @@ The `visualize_graph` function renders the road network using real GPS coordinat
 visualize_graph(graph, path=None, time_period='off_peak')
 ```
 
-| Parameter | Type | Default | Description |
-|---|---|---|---|
-| `graph` | `TrafficGraph` | — | A loaded `TrafficGraph` instance |
-| `path` | `list[str]` or `None` | `None` | Optional list of city names to highlight in red |
-| `time_period` | `str` | `'off_peak'` | One of `'am_peak'`, `'off_peak'`, or `'pm_peak'` — controls which traffic distribution is used for displayed travel times |
+| Parameter     | Type                  | Default      | Description                                                                                                               |
+| ------------- | --------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `graph`       | `TrafficGraph`        | —            | A loaded `TrafficGraph` instance                                                                                          |
+| `path`        | `list[str]` or `None` | `None`       | Optional list of city names to highlight in red                                                                           |
+| `time_period` | `str`                 | `'off_peak'` | One of `'am_peak'`, `'off_peak'`, or `'pm_peak'` — controls which traffic distribution is used for displayed travel times |
 
 ---
 
-## Search Algorithms
+## Phase 2 - Basic Search Algorithms
 
-### Uniform Cost Search
+Phase 2 introduces baseline deterministic routing algorithms for the graph. In this phase, edge weights use **free-flow travel time only** (no traffic uncertainty yet), which makes this a clean reference point before risk-aware routing.
 
-`uniform_cost_search(graph, start, goal)` expands nodes in order of cumulative path cost using a min-heap priority queue, guaranteeing the optimal (lowest-cost) path. Visited nodes are tracked with their best known cost and parent pointer to support path reconstruction.
+### Uniform Cost Search (UCS)
 
-### A\* Search
+`uniform_cost_search(graph, start, goal)` computes the least-cost path using cumulative free-flow travel time.
 
-`a_star_search(graph, start, goal)` augments UCS with the Haversine straight-line distance to the goal as a heuristic, guiding expansion toward the destination and reducing nodes explored. Because Haversine distance is always a lower bound on true road distance, the heuristic is **admissible**, preserving optimality.
+- Cost function: sum of `edge.get_travel_time_without_traffic()`
+- Guarantee: optimal path under deterministic free-flow costs
+- Returns: `(path_edges, nodes_expanded)`
 
-### Path Reconstruction
+### A\* Search (Haversine Heuristic)
 
-`reconstruct_path(visited, start, goal)` traces the parent-pointer chain stored during search to recover the full city-by-city route from start to goal.
+`a_star_search(graph, start, goal)` adds a heuristic based on straight-line Haversine distance between cities.
 
----
+- `g(n)`: accumulated free-flow travel time
+- `h(n)`: Haversine distance to goal
+- `f(n) = g(n) + h(n)`
+- Returns: `(path_edges, nodes_expanded)`
+
+In practice, this reduces unnecessary expansions compared with UCS while preserving path optimality for the deterministic Phase 2 setup.
+
+### Phase 2 Test Cases (Notebook Harness)
+
+Phase 2 tests are implemented directly in the notebook as a route-case harness (not in `pytest`).
+
+- 5 primary route cases:
+  - Albany -> Troy (parallel-edge choice)
+  - Utica -> Rome (neighbor ordering / shortest direct road)
+  - Buffalo -> Niagara Falls (multi-route local choice)
+  - Binghamton -> Elmira (detour rejection)
+  - Buffalo -> Utica (multi-hop chain benchmark)
+- 3 edge cases:
+  - Source == goal
+  - Multiple parallel edges with deterministic tie handling
+  - Alternate local pair consistency
+
+The harness validates expected city sequence and total free-flow cost for both algorithms, and records node expansion counts.
+
+### Phase 2 Result Summary
+
+- All listed Phase 2 route/edge cases pass for both UCS and A\* in notebook execution.
+- A\* expands fewer nodes overall than UCS.
+- Reported notebook aggregate: **7 fewer nodes expanded by A\*** (**20.0% reduction**).
 
 ## Testing
 
-Tests live in `test_traffic_routing.py` and cover all four data structure classes. Because the source code is in a `.ipynb` notebook rather than a standalone `.py` module, the test file extracts and executes all code cells at collection time — no manual conversion needed.
+Automated tests in `test_traffic_routing.py` currently focus on Phase 1 data structures and utilities. Because the source code is in a `.ipynb` notebook rather than a standalone `.py` module, the test file extracts and executes all code cells at collection time — no manual conversion needed.
+
+Phase 2 algorithm checks (UCS and A\*) are currently run via notebook test cells and printed harness summaries.
 
 Run the full suite from the project root:
 
@@ -85,12 +119,13 @@ python -m pytest test_traffic_routing.py -v
 
 ### Test Coverage
 
-| Class | What's tested |
-|---|---|
-| `TrafficDistribution` | Attribute storage, `sample()` clamps to ≥ 1.0, randomness, tight-std clustering, `repr` |
-| `Edge` | Free-flow time, deterministic AM/off-peak/PM times against real dataset values, off-peak ≤ peak ordering, stochastic ≥ free-flow, `ValueError` on invalid time period, `repr` |
-| `Node` | Self-distance = 0, Haversine value for Buffalo→Rochester (~65 mi < 74 mi road), symmetry, triangle inequality, full admissibility sweep across all 41 dataset edges, `repr` |
-| `TrafficGraph` | Node/edge counts (28 nodes, 82 directed edges), spot-check node attributes, `get_node` hit and miss, `get_neighbors` non-empty and typed, undirected symmetry, `get_edges_between` multiple roads and known travel time value, adjacency completeness, no self-loops |
+| Class                 | What's tested                                                                                                                                                                                                                                                        |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `TrafficDistribution` | Attribute storage, `sample()` clamps to ≥ 1.0, randomness, tight-std clustering, `repr`                                                                                                                                                                              |
+| `Edge`                | Free-flow time, deterministic AM/off-peak/PM times against real dataset values, off-peak ≤ peak ordering, stochastic ≥ free-flow, `ValueError` on invalid time period, `repr`                                                                                        |
+| `Node`                | Self-distance = 0, Haversine value for Buffalo→Rochester (~65 mi < 74 mi road), symmetry, triangle inequality, full admissibility sweep across all 41 dataset edges, `repr`                                                                                          |
+| `TrafficGraph`        | Node/edge counts (28 nodes, 82 directed edges), spot-check node attributes, `get_node` hit and miss, `get_neighbors` non-empty and typed, undirected symmetry, `get_edges_between` multiple roads and known travel time value, adjacency completeness, no self-loops |
+| `reconstruct_path`    | Path reconstruction for chain and start==goal scenarios                                                                                                                                                                                                              |
 
 ---
 
