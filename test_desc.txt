@@ -1,0 +1,205 @@
+Test Description — Uncertainty-Aware Traffic Routing
+CSCI-630 | Artificial Intelligence
+=====================================================
+
+Run environment : Python 3.14.3, pytest 9.0.3, macOS (Apple Silicon)
+Result summary  : 25 passed, 2 failed (27 total)
+
+
+How the test file works
+-----------------------
+The notebook is never converted to a .py file. Instead, the test runner
+reads the .ipynb JSON directly, concatenates every code cell, strips out
+the lines that would load data or display matplotlib plots, and exec's
+the rest into a namespace. The four core classes (TrafficDistribution,
+Edge, Node, TrafficGraph) and the reconstruct_path function are then
+pulled out of that namespace and tested normally with pytest.
+
+A module-scoped fixture loads the full graph from the CSV files once and
+shares it across every test that needs real data.
+
+
+======================================================================
+1. TestTrafficDistribution (4 tests — all PASSED)
+======================================================================
+
+1.1  test_attributes_stored                                     PASSED
+     Creates a TrafficDistribution with mean=1.5, std=0.2 and
+     asserts that both values are stored correctly as attributes.
+
+1.2  test_sample_never_below_one                                PASSED
+     Uses an extreme standard deviation (mean=1.0, std=5.0) and
+     calls sample() 200 times. Every returned value must be >= 1.0.
+     A multiplier below 1 would mean faster-than-free-flow travel,
+     which is physically impossible, so the clamp is critical.
+
+1.3  test_sample_is_stochastic                                  PASSED
+     Calls sample() 30 times on a distribution with mean=2.0,
+     std=0.5 and collects the results into a set. The set must
+     contain more than one unique value, confirming that sampling
+     introduces actual randomness rather than always returning the
+     mean.
+
+1.4  test_repr                                                  PASSED
+     Checks that the string representation includes the mean and
+     std values, useful for debugging output.
+
+
+======================================================================
+2. TestEdge (8 tests — all PASSED)
+======================================================================
+All tests in this class use a hand-built synthetic edge:
+  A → B via I-99, 60 miles, 60 mph, free_flow_time = 60 min
+  AM peak multiplier: mean=2.0, std=0.3
+  Off-peak multiplier: mean=1.1, std=0.1
+  PM peak multiplier: mean=2.5, std=0.4
+
+2.1  test_free_flow_time                                        PASSED
+     get_travel_time_without_traffic() must return exactly 60.0,
+     the raw free-flow time with no congestion applied.
+
+2.2  test_deterministic_am                                      PASSED
+     Deterministic AM travel time = 60 * 2.0 = 120.0 minutes.
+
+2.3  test_deterministic_off_peak                                PASSED
+     Deterministic off-peak travel time = 60 * 1.1 = 66.0 minutes.
+
+2.4  test_deterministic_pm                                      PASSED
+     Deterministic PM travel time = 60 * 2.5 = 150.0 minutes.
+
+2.5  test_off_peak_leq_peaks                                    PASSED
+     The off-peak mean travel time must be less than or equal to
+     both the AM and PM peak mean travel times. This is a domain
+     invariant: midday/night traffic should never be worse on
+     average than rush hour.
+
+2.6  test_sampled_geq_free_flow                                 PASSED
+     Calls the probabilistic sampling method 100 times and asserts
+     every result >= free_flow_time_min (60.0). Traffic can only
+     make things slower, never faster.
+
+2.7  test_invalid_time_period_raises                             PASSED
+     Passing "midnight" as a time period must raise a ValueError.
+     Only "am_peak", "off_peak", and "pm_peak" are valid.
+
+2.8  test_repr                                                  PASSED
+     The repr string must contain the from/to cities and the
+     highway name.
+
+
+======================================================================
+3. TestNode (4 tests — 3 PASSED, 1 FAILED)
+======================================================================
+
+3.1  test_self_distance_zero                                    PASSED
+     Buffalo's Haversine distance to itself must be exactly 0.0.
+
+3.2  test_symmetry                                              PASSED
+     haversine_distance(Buffalo, Rochester) must equal
+     haversine_distance(Rochester, Buffalo). Distance is symmetric.
+
+3.3  test_haversine_less_than_road                               PASSED
+     The straight-line distance between Buffalo and Rochester must
+     be strictly less than 73 miles (the approximate I-90 driving
+     distance). This is a spot-check that the heuristic is
+     admissible for a known city pair.
+
+3.4  test_admissibility_all_edges                                FAILED
+     Iterates over every unique edge in the dataset and checks
+     that the Haversine distance between the two endpoint cities
+     is <= the road mileage listed in the CSV. This is the formal
+     admissibility requirement: if the heuristic ever overestimates
+     the true cost, A* can return suboptimal paths.
+
+     Failure details:
+       Edge    : New York City → Yonkers via I-87
+       Road mi : 15.0  (from CSV)
+       Haversine: 16.25 (computed from GPS coordinates)
+       Problem : The CSV lists 15 miles, but the GPS coordinates
+                 are 16.25 miles apart as the crow flies. A road
+                 cannot be shorter than the straight-line distance.
+       Fix     : Either increase the mileage to ~17 in the edges
+                 CSV, or adjust the GPS coordinates of NYC/Yonkers
+                 so the straight-line distance falls below 15.
+
+
+======================================================================
+4. TestTrafficGraph (7 tests — 6 PASSED, 1 FAILED)
+======================================================================
+
+4.1  test_node_count                                            PASSED
+     The graph must contain 27 or 28 nodes (cities). The loaded
+     graph has 28.
+
+4.2  test_edge_count                                            PASSED
+     The graph must contain 82 or 84 directed edges (41 or 42
+     roads x 2 directions for undirected representation). The
+     loaded graph has 84.
+
+4.3  test_get_node_hit                                          PASSED
+     get_node("Buffalo") must return a Node whose city attribute
+     is "Buffalo".
+
+4.4  test_get_node_miss                                         PASSED
+     get_node("Atlantis") must return None — the city does not
+     exist in the dataset.
+
+4.5  test_neighbors_nonempty                                    FAILED
+     Iterates over every city in the graph and asserts that each
+     has at least one outgoing edge (neighbor). An isolated node
+     is unreachable by any search algorithm.
+
+     Failure details:
+       City   : Mount Vernon
+       Problem: Mount Vernon exists in ny_graph_nodes.csv but has
+                zero edges in ny_graph_edges.csv. It is an orphan
+                node — no algorithm can reach or leave it.
+       Fix    : Add at least one edge involving Mount Vernon
+                (e.g., Mount Vernon ↔ Yonkers or Mount Vernon ↔
+                Bronx) to the edges CSV.
+
+4.6  test_undirected_symmetry                                   PASSED
+     For every edge A → B in the graph, there must also exist an
+     edge B → A, since the graph is modeled as undirected.
+
+4.7  test_no_self_loops                                         PASSED
+     No edge in the graph should have from_city == to_city.
+
+4.8  test_spot_check_node_attrs                                 PASSED
+     Verifies that New York City's region is "NYC Metro" and its
+     latitude is approximately 40.71.
+
+4.9  test_edges_between_known_pair                              PASSED
+     NYC ↔ Yonkers must have at least 2 road options (the dataset
+     has I-87, Hutchinson Pkwy, and I-278).
+
+
+======================================================================
+5. TestReconstructPath (2 tests — all PASSED)
+======================================================================
+
+5.1  test_simple_chain                                          PASSED
+     Given a visited dictionary representing A → B → C with costs,
+     reconstruct_path must return ["A", "B", "C"].
+
+5.2  test_single_node                                           PASSED
+     When start == goal, the reconstructed path must be a single-
+     element list ["X"].
+
+
+======================================================================
+Summary
+======================================================================
+
+  Class                    Tests   Passed   Failed
+  ─────────────────────────────────────────────────
+  TrafficDistribution         4        4        0
+  Edge                        8        8        0
+  Node                        4        3        1
+  TrafficGraph                7        6        1
+  ReconstructPath             2        2        0
+  ─────────────────────────────────────────────────
+  Total                      25       23        2
+
+Both failures are data-level issues in the CSV files, not code bugs.
+The code logic itself is correct.
