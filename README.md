@@ -41,6 +41,57 @@ Loaded 28 nodes.
 Loaded 84 edges.  ← 42 roads × 2 directions (undirected graph)
 ```
 
+### Graph Visualization
+
+The `visualize_graph` function renders the road network using real GPS coordinates, so the layout mirrors the actual geography of New York State. Edge labels show the highway name and the expected (mean) travel time for the selected time period. An optional `path` argument highlights a route in red.
+
+```python
+visualize_graph(graph, path=None, time_period='off_peak')
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `graph` | `TrafficGraph` | — | A loaded `TrafficGraph` instance |
+| `path` | `list[str]` or `None` | `None` | Optional list of city names to highlight in red |
+| `time_period` | `str` | `'off_peak'` | One of `'am_peak'`, `'off_peak'`, or `'pm_peak'` — controls which traffic distribution is used for displayed travel times |
+
+---
+
+## Search Algorithms
+
+### Uniform Cost Search
+
+`uniform_cost_search(graph, start, goal)` expands nodes in order of cumulative path cost using a min-heap priority queue, guaranteeing the optimal (lowest-cost) path. Visited nodes are tracked with their best known cost and parent pointer to support path reconstruction.
+
+### A\* Search
+
+`a_star_search(graph, start, goal)` augments UCS with the Haversine straight-line distance to the goal as a heuristic, guiding expansion toward the destination and reducing nodes explored. Because Haversine distance is always a lower bound on true road distance, the heuristic is **admissible**, preserving optimality.
+
+### Path Reconstruction
+
+`reconstruct_path(visited, start, goal)` traces the parent-pointer chain stored during search to recover the full city-by-city route from start to goal.
+
+---
+
+## Testing
+
+Tests live in `test_traffic_routing.py` and cover all four data structure classes. Because the source code is in a `.ipynb` notebook rather than a standalone `.py` module, the test file extracts and executes all code cells at collection time — no manual conversion needed.
+
+Run the full suite from the project root:
+
+```bash
+python -m pytest test_traffic_routing.py -v
+```
+
+### Test Coverage
+
+| Class | What's tested |
+|---|---|
+| `TrafficDistribution` | Attribute storage, `sample()` clamps to ≥ 1.0, randomness, tight-std clustering, `repr` |
+| `Edge` | Free-flow time, deterministic AM/off-peak/PM times against real dataset values, off-peak ≤ peak ordering, stochastic ≥ free-flow, `ValueError` on invalid time period, `repr` |
+| `Node` | Self-distance = 0, Haversine value for Buffalo→Rochester (~65 mi < 74 mi road), symmetry, triangle inequality, full admissibility sweep across all 41 dataset edges, `repr` |
+| `TrafficGraph` | Node/edge counts (28 nodes, 82 directed edges), spot-check node attributes, `get_node` hit and miss, `get_neighbors` non-empty and typed, undirected symmetry, `get_edges_between` multiple roads and known travel time value, adjacency completeness, no self-loops |
+
 ---
 
 > **Note:** AI assistance was used in generating code comments and documentation throughout this project.
