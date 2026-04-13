@@ -47,16 +47,6 @@ Loaded 84 edges.  ← 42 roads × 2 directions (undirected graph)
 
 The `visualize_graph` function renders the road network using real GPS coordinates, so the layout mirrors the actual geography of New York State. Edge labels show the highway name and the expected (mean) travel time for the selected time period. An optional `path` argument highlights a route in red.
 
-```python
-visualize_graph(graph, path=None, time_period='off_peak')
-```
-
-| Parameter     | Type                  | Default      | Description                                                                                                               |
-| ------------- | --------------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------- |
-| `graph`       | `TrafficGraph`        | —            | A loaded `TrafficGraph` instance                                                                                          |
-| `path`        | `list[str]` or `None` | `None`       | Optional list of city names to highlight in red                                                                           |
-| `time_period` | `str`                 | `'off_peak'` | One of `'am_peak'`, `'off_peak'`, or `'pm_peak'` — controls which traffic distribution is used for displayed travel times |
-
 ---
 
 ## Phase 2 - Basic Search Algorithms
@@ -82,7 +72,7 @@ Phase 2 introduces baseline deterministic routing algorithms for the graph. In t
 
 In practice, this reduces unnecessary expansions compared with UCS while preserving path optimality for the deterministic Phase 2 setup.
 
-### Phase 2 Test Cases (Notebook Harness)
+### Phase 2 Test Cases
 
 Phase 2 tests are implemented directly in the notebook as a route-case harness (not in `pytest`).
 
@@ -105,7 +95,7 @@ The harness validates expected city sequence and total free-flow cost for both a
 - A\* expands fewer nodes overall than UCS.
 - Reported notebook aggregate: **7 fewer nodes expanded by A\*** (**20.0% reduction**).
 
-## Testing
+## Class Testing
 
 Automated tests in `test_traffic_routing.py` currently focus on Phase 1 data structures and utilities. Because the source code is in a `.ipynb` notebook rather than a standalone `.py` module, the test file extracts and executes all code cells at collection time — no manual conversion needed.
 
