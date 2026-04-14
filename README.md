@@ -82,10 +82,9 @@ Phase 2 tests are implemented directly in the notebook as a route-case harness (
   - Buffalo -> Niagara Falls (multi-route local choice)
   - Binghamton -> Elmira (detour rejection)
   - Buffalo -> Utica (multi-hop chain benchmark)
-- 3 edge cases:
+- 2 edge cases:
   - Source == goal
-  - Multiple parallel edges with deterministic tie handling
-  - Alternate local pair consistency
+  - Unreachable destination / disconnected graph component
 
 The harness validates expected city sequence and total free-flow cost for both algorithms, and records node expansion counts.
 
@@ -95,11 +94,122 @@ The harness validates expected city sequence and total free-flow cost for both a
 - A\* expands fewer nodes overall than UCS.
 - Reported notebook aggregate: **7 fewer nodes expanded by A\*** (**20.0% reduction**).
 
+---
+
+## Phase 3 - Traffic-Aware Search
+
+Phase 3 extends the deterministic search algorithms to include time-dependent traffic costs. Instead of using only free-flow travel time, each edge cost is computed as:
+
+```
+free_flow_time_min × congestion_multiplier(time_period)
+```
+
+Each route query now accepts a time period:
+
+- `am_peak`
+- `off_peak`
+- `pm_peak`
+
+This lets the same graph produce different optimal routes depending on traffic conditions. For example, a route that is fastest during off-peak hours can become slower during AM or PM rush hour when the congestion multiplier increases.
+
+### Traffic-Aware UCS
+
+`uniform_cost_search_with_traffic(graph, start, goal, time_period)` keeps the same UCS structure from Phase 2, but replaces the free-flow cost with the deterministic mean travel time for the selected traffic period.
+
+- Cost function: sum of `edge.get_expected_travel_time_with_traffic(time_period)`
+- Uses mean congestion multipliers, not random samples
+- Returns: `(path_edges, nodes_expanded)`
+
+### Traffic-Aware A\*
+
+`a_star_search_with_traffic(graph, start, goal, time_period)` applies the same traffic-aware edge cost to A\* search while continuing to use the Haversine heuristic.
+
+- `g(n)`: accumulated congestion-adjusted travel time
+- `h(n)`: Haversine distance to goal
+- `f(n) = g(n) + h(n)`
+- Returns: `(path_edges, nodes_expanded)`
+
+### Phase 3 Test Cases
+
+Phase 3 tests are implemented directly in the notebook as a traffic-aware route harness.
+
+- Same-route, different-time-period checks:
+  - New York City -> Long Island City during off-peak: `16 × 1.3 = 20.8 min`
+  - New York City -> Long Island City during AM peak: `16 × 3.5 = 56.0 min`
+  - New York City -> Long Island City during PM peak: `16 × 3.8 = 60.8 min`
+- Path-flip checks:
+  - Buffalo -> Niagara Falls during off-peak uses the direct I-190 route: `17.0 min`
+  - Buffalo -> Niagara Falls during AM peak flips to Buffalo -> Tonawanda -> Niagara Falls: `(7 × 1.6) + (13 × 1.3) = 28.1 min`
+
+The harness validates expected city sequence and congestion-adjusted route cost for both traffic-aware UCS and traffic-aware A\*, and records node expansion counts.
+
+### Phase 3 Result Summary
+
+- All listed Phase 3 traffic-aware route cases pass for both UCS and A\* in notebook execution.
+- The Buffalo -> Niagara Falls example demonstrates that traffic can change the optimal path.
+- The notebook also reports side-by-side node expansion counts for traffic-aware UCS vs traffic-aware A\*.
+
+---
+
+## Phase 4 - Probabilistic Traffic with Monte Carlo Simulation
+
+Phase 4 moves from deterministic mean traffic multipliers to probabilistic traffic scenarios. Each edge's traffic multiplier is treated as a Gaussian random variable, so the best route can change from one sampled traffic scenario to another.
+
+The Monte Carlo workflow is:
+
+1. Sample one full traffic scenario by drawing a travel time for every edge.
+2. Run UCS on that sampled scenario to choose a route.
+3. Repeat the process many times and count how often each route is selected.
+4. Return the most frequently selected route as the most likely route under uncertainty.
+5. Run a second Monte Carlo simulation on that chosen route to estimate travel-time reliability.
+
+This phase answers two questions:
+
+- Which route is most often optimal under uncertain traffic?
+- How reliable is that route once selected?
+
+### Probabilistic Helper Functions
+
+The notebook adds helper functions for the Monte Carlo workflow:
+
+- `sample_edge_costs(graph, time_period)` samples a travel time for every directed edge in the graph.
+- `uniform_cost_search_for_sampled_scenario(graph, start, goal, sampled_costs)` runs UCS using one sampled traffic scenario.
+- `probabilistic_route_choice_report(graph, start, goal, time_period, num_trials, seed, threshold)` counts route-choice frequency across many sampled scenarios.
+- `monte_carlo_path_simulation_report(path, time_period, num_trials, seed, threshold)` summarizes travel-time reliability for the selected route.
+
+The report includes:
+
+- Most common path and edge sequence
+- Selection frequency
+- Average nodes expanded across sampled searches
+- Mean, standard deviation, minimum, and maximum travel time for the chosen path
+- Optional probability that travel time exceeds a threshold
+- Top route frequencies
+
+### Phase 4 Test Cases
+
+Phase 4 tests focus on behavioral guarantees and reproducibility instead of one exact fixed route cost, because Monte Carlo results are stochastic.
+
+- Route validity under uncertainty:
+  - Buffalo -> Niagara Falls during AM peak should most often choose Buffalo -> Tonawanda -> Niagara Falls.
+  - The chosen-path Monte Carlo mean should stay in a reasonable interval near 28 minutes.
+- Monte Carlo reproducibility:
+  - Running the same report twice with the same random seed should produce the same route-choice summary.
+- Edge cases:
+  - Rochester -> Rochester during PM peak returns the trivial path with selection frequency `1.0`, mean travel time `0`, and standard deviation `0`.
+  - New York City -> Albany during AM peak remains unreachable in every sampled scenario.
+
+### Phase 4 Result Summary
+
+- All listed Phase 4 sample tests pass in notebook execution.
+- The Buffalo -> Niagara Falls AM peak case confirms that the probabilistic workflow preserves the expected route flip while still allowing sampled variation.
+- Fixed seeding is used so Monte Carlo outputs are reproducible for debugging, grading, and comparison.
+
 ## Class Testing
 
 Automated tests in `test_traffic_routing.py` currently focus on Phase 1 data structures and utilities. Because the source code is in a `.ipynb` notebook rather than a standalone `.py` module, the test file extracts and executes all code cells at collection time — no manual conversion needed.
 
-Phase 2 algorithm checks (UCS and A\*) are currently run via notebook test cells and printed harness summaries.
+Phase 2, Phase 3, and Phase 4 algorithm checks are currently run via notebook test cells and printed harness summaries.
 
 Run the full suite from the project root:
 
