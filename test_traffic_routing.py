@@ -3,47 +3,81 @@ Test suite for Uncertainty-Aware Traffic Routing
 CSCI-630 | Artificial Intelligence
 
 Extracts code from the notebook, then runs tests against the four core
-data-structure classes: TrafficDistribution, Edge, Node, TrafficGraph.
+data-structure classes (TrafficDistribution, Edge, Node, TrafficGraph)
+and the Phase 2 search algorithms (UCS, A*).
 
 Usage:
-    python -m pytest test_traffic_routing.py -v
+    python3 -m pytest test_traffic_routing.py -v
 """
 
-import ast
 import math
 import random
-import textwrap
 import pytest
-import json, types
+
+# ---------------------------------------------------------------------------
+# Bootstrap: pull all code cells out of the .ipynb and exec them so we can
+# import the classes without converting the notebook to a .py file.
+# ---------------------------------------------------------------------------
+
+import json
 
 def _load_notebook_code(nb_path: str) -> str:
-    """Read a .ipynb and concatenate all code cells into one big string."""
+    """Read a .ipynb and concatenate all safe code cells into one string."""
     with open(nb_path, "r") as f:
         nb = json.load(f)
     chunks = []
+    # Keywords that indicate a cell should be skipped entirely
+    SKIP_CELL_IF_CONTAINS = (
+        "run_phase_2_tests(",       # the inline test runner invocations
+        "ucs_by_id",                # the comparison summary cell
+        "visualize_graph(traffic",  # visualization calls
+    )
     for cell in nb["cells"]:
-        if cell["cell_type"] == "code":
-            src = "".join(cell["source"])
-            chunks.append(src)
+        if cell["cell_type"] != "code":
+            continue
+        src = "".join(cell["source"])
+        if any(marker in src for marker in SKIP_CELL_IF_CONTAINS):
+            # Still keep function/class definitions from mixed cells
+            # by extracting only def/class blocks
+            safe_lines = []
+            inside_def = False
+            for line in src.splitlines():
+                stripped = line.strip()
+                if stripped.startswith(("def ", "class ")):
+                    inside_def = True
+                elif inside_def and stripped and not line[0] in (" ", "\t"):
+                    # We've left the function body
+                    inside_def = False
+                if inside_def:
+                    safe_lines.append(line)
+            if safe_lines:
+                chunks.append("\n".join(safe_lines))
+            continue
+        # Skip top-level statements that load data
+        filtered_lines = []
+        for line in src.splitlines():
+            stripped = line.strip()
+            if stripped.startswith(("traffic_graph", "visualize_graph")):
+                continue
+            filtered_lines.append(line)
+        chunks.append("\n".join(filtered_lines))
     return "\n\n".join(chunks)
 
 # Execute notebook code in a throwaway namespace, then pull symbols we need.
 _NB_PATH = "uncertainty_aware_traffic_routing.ipynb"
 _nb_code = _load_notebook_code(_NB_PATH)
 
-# Strip out lines that would trigger graph loading / matplotlib display
-_filtered = "\n".join(
-    line for line in _nb_code.splitlines()
-    if not line.strip().startswith(("traffic_graph", "visualize_graph"))
-)
 _ns = {}
-exec(_filtered, _ns)
+exec(_nb_code, _ns)
 
-TrafficDistribution = _ns["TrafficDistribution"]
-Edge                = _ns["Edge"]
-Node                = _ns["Node"]
-TrafficGraph        = _ns["TrafficGraph"]
-reconstruct_path    = _ns["reconstruct_path"]
+TrafficDistribution   = _ns["TrafficDistribution"]
+Edge                  = _ns["Edge"]
+Node                  = _ns["Node"]
+TrafficGraph          = _ns["TrafficGraph"]
+uniform_cost_search   = _ns["uniform_cost_search"]
+a_star_search         = _ns["a_star_search"]
+path_to_city_sequence = _ns["path_to_city_sequence"]
+path_cost             = _ns["path_cost"]
 
 # Paths to the CSV data files (adjust if your layout differs)
 NODES_CSV = "data/CSCI 630 - Artificial Intelligence - Project Data - ny_graph_nodes.csv"
@@ -145,6 +179,16 @@ class TestEdge:
         with pytest.raises(ValueError):
             sample_edge.get_travel_time("midnight")
 
+    def test_lt_ordering(self):
+        """Edge.__lt__ should allow edges to be compared for heap ordering."""
+        e1 = Edge("A", "B", "I-1", 10, 60, "interstate",
+                  TrafficDistribution(1.0, 0.1), TrafficDistribution(1.0, 0.1),
+                  TrafficDistribution(1.0, 0.1), 10.0)
+        e2 = Edge("A", "C", "I-2", 20, 60, "interstate",
+                  TrafficDistribution(1.0, 0.1), TrafficDistribution(1.0, 0.1),
+                  TrafficDistribution(1.0, 0.1), 20.0)
+        assert isinstance(e1 < e2, bool)
+
     def test_repr(self, sample_edge):
         r = repr(sample_edge)
         assert "A" in r and "B" in r and "I-99" in r
@@ -204,13 +248,10 @@ class TestTrafficGraph:
     """Integration-level checks on the loaded graph."""
 
     def test_node_count(self, graph):
-        """We expect 27 cities (the CSV has 27 data rows after the header)."""
-        # The README says 28, but the CSV header + 27 data lines = 27 nodes.
-        # Accept either 27 or 28 — whichever your CSV actually has.
         assert len(graph.nodes) in (27, 28)
 
     def test_edge_count(self, graph):
-        """41 roads × 2 directions = 82 directed edges (or 42×2=84)."""
+        """41 or 42 roads × 2 directions."""
         assert len(graph.edges) in (82, 84)
 
     def test_get_node_hit(self, graph):
@@ -227,10 +268,7 @@ class TestTrafficGraph:
             assert len(graph.get_neighbors(city)) > 0, f"{city} has 0 neighbors"
 
     def test_undirected_symmetry(self, graph):
-        """
-        If there's an edge A→B, there must also be an edge B→A,
-        because the graph is undirected.
-        """
+        """If there's an edge A→B, there must also be an edge B→A."""
         for edge in graph.edges:
             reverse = graph.get_edges_between(edge.to_city, edge.from_city)
             assert len(reverse) > 0, (
@@ -255,22 +293,165 @@ class TestTrafficGraph:
         assert len(edges) >= 2, "Expected multiple roads between NYC and Yonkers"
 
 
-# ========================== reconstruct_path ================================
+# ========================== Helpers (path_to_city_sequence, path_cost) =======
 
-class TestReconstructPath:
-    """Quick check that path reconstruction does the right thing."""
+class TestHelpers:
+    """Tests for the path utility functions added in Phase 2."""
 
-    def test_simple_chain(self):
-        """A→B→C should reconstruct correctly from a visited dict."""
-        visited = {
-            "A": (0, None),
-            "B": (10, "A"),
-            "C": (25, "B"),
-        }
-        path = reconstruct_path(visited, "A", "C")
-        assert path == ["A", "B", "C"]
+    def test_path_to_city_sequence(self):
+        """Should produce [start, edge1.to, edge2.to, ...]."""
+        e1 = Edge("A", "B", "I-1", 10, 60, "interstate",
+                  TrafficDistribution(1.0, 0.1), TrafficDistribution(1.0, 0.1),
+                  TrafficDistribution(1.0, 0.1), 10.0)
+        e2 = Edge("B", "C", "I-1", 20, 60, "interstate",
+                  TrafficDistribution(1.0, 0.1), TrafficDistribution(1.0, 0.1),
+                  TrafficDistribution(1.0, 0.1), 20.0)
+        assert path_to_city_sequence("A", [e1, e2]) == ["A", "B", "C"]
 
-    def test_single_node(self):
-        """Start == goal should return a one-element path."""
-        visited = {"X": (0, None)}
-        assert reconstruct_path(visited, "X", "X") == ["X"]
+    def test_path_to_city_sequence_none(self):
+        """None path (unreachable) should return just the start city."""
+        assert path_to_city_sequence("X", None) == ["X"]
+
+    def test_path_cost_simple(self):
+        """Cost should be the sum of free-flow times along the path."""
+        e1 = Edge("A", "B", "I-1", 10, 60, "interstate",
+                  TrafficDistribution(1.0, 0.1), TrafficDistribution(1.0, 0.1),
+                  TrafficDistribution(1.0, 0.1), 10.0)
+        e2 = Edge("B", "C", "I-1", 20, 60, "interstate",
+                  TrafficDistribution(1.0, 0.1), TrafficDistribution(1.0, 0.1),
+                  TrafficDistribution(1.0, 0.1), 25.0)
+        assert path_cost([e1, e2]) == 35.0
+
+    def test_path_cost_none(self):
+        """None path should cost 0."""
+        assert path_cost(None) == 0
+
+
+# ========================== Phase 2: Search Algorithms ======================
+
+class TestUCS:
+    """Uniform Cost Search tests using the notebook's own test cases."""
+
+    def test_1hop_albany_troy(self, graph):
+        """Case 1: Albany→Troy should pick I-787 (9 min) over NY-2 (15 min)."""
+        path, expanded = uniform_cost_search(graph, "Albany", "Troy")
+        assert path_to_city_sequence("Albany", path) == ["Albany", "Troy"]
+        assert path_cost(path) == 9.0
+
+    def test_1hop_utica_rome(self, graph):
+        """Case 2: Utica→Rome should pick I-90 (15 min) over NY-49 (19 min)."""
+        path, expanded = uniform_cost_search(graph, "Utica", "Rome")
+        assert path_to_city_sequence("Utica", path) == ["Utica", "Rome"]
+        assert path_cost(path) == 15.0
+
+    def test_direct_vs_detour_buffalo_niagara(self, graph):
+        """Case 3: Direct I-190 (17 min) beats detour through Tonawanda (20 min)."""
+        path, expanded = uniform_cost_search(graph, "Buffalo", "Niagara Falls")
+        assert path_to_city_sequence("Buffalo", path) == ["Buffalo", "Niagara Falls"]
+        assert path_cost(path) == 17.0
+
+    def test_direct_binghamton_elmira(self, graph):
+        """Case 4: Direct I-86 (48 min) beats the Ithaca detour (90 min)."""
+        path, expanded = uniform_cost_search(graph, "Binghamton", "Elmira")
+        assert path_to_city_sequence("Binghamton", path) == ["Binghamton", "Elmira"]
+        assert path_cost(path) == 48.0
+
+    def test_long_buffalo_utica(self, graph):
+        """Case 5: Buffalo→Rochester→Syracuse→Utica (192 min)."""
+        path, expanded = uniform_cost_search(graph, "Buffalo", "Utica")
+        assert path_to_city_sequence("Buffalo", path) == ["Buffalo", "Rochester", "Syracuse", "Utica"]
+        assert path_cost(path) == 192.0
+
+    def test_unreachable_nyc_albany(self, graph):
+        """Case 6: NYC and Albany are disconnected — must return None."""
+        path, expanded = uniform_cost_search(graph, "New York City", "Albany")
+        assert path is None
+
+    def test_source_equals_goal(self, graph):
+        """EC-1: Rochester→Rochester should return an empty path with cost 0."""
+        path, expanded = uniform_cost_search(graph, "Rochester", "Rochester")
+        assert path_to_city_sequence("Rochester", path) == ["Rochester"]
+        assert path_cost(path) == 0.0
+
+    def test_parallel_edges_nyc_yonkers(self, graph):
+        """EC-2: NYC→Yonkers should pick the 20-min edge out of three options."""
+        path, expanded = uniform_cost_search(graph, "New York City", "Yonkers")
+        assert path_to_city_sequence("New York City", path) == ["New York City", "Yonkers"]
+        assert path_cost(path) == 20.0
+
+    def test_sink_node_amityville(self, graph):
+        """EC-3: Amityville (near-leaf node) should still be reachable."""
+        path, expanded = uniform_cost_search(graph, "Amityville", "Hempstead")
+        assert path_to_city_sequence("Amityville", path) == ["Amityville", "Hempstead"]
+        assert path_cost(path) == 24.0
+
+    def test_invalid_start(self, graph):
+        """A city not in the graph should return None gracefully."""
+        path, expanded = uniform_cost_search(graph, "Atlantis", "Buffalo")
+        assert path is None
+        assert expanded == 0
+
+
+class TestAStar:
+    """A* Search tests — should produce the same optimal paths as UCS."""
+
+    def test_1hop_albany_troy(self, graph):
+        path, expanded = a_star_search(graph, "Albany", "Troy")
+        assert path_to_city_sequence("Albany", path) == ["Albany", "Troy"]
+        assert path_cost(path) == 9.0
+
+    def test_1hop_utica_rome(self, graph):
+        path, expanded = a_star_search(graph, "Utica", "Rome")
+        assert path_to_city_sequence("Utica", path) == ["Utica", "Rome"]
+        assert path_cost(path) == 15.0
+
+    def test_direct_vs_detour_buffalo_niagara(self, graph):
+        path, expanded = a_star_search(graph, "Buffalo", "Niagara Falls")
+        assert path_to_city_sequence("Buffalo", path) == ["Buffalo", "Niagara Falls"]
+        assert path_cost(path) == 17.0
+
+    def test_direct_binghamton_elmira(self, graph):
+        path, expanded = a_star_search(graph, "Binghamton", "Elmira")
+        assert path_to_city_sequence("Binghamton", path) == ["Binghamton", "Elmira"]
+        assert path_cost(path) == 48.0
+
+    def test_long_buffalo_utica(self, graph):
+        path, expanded = a_star_search(graph, "Buffalo", "Utica")
+        assert path_to_city_sequence("Buffalo", path) == ["Buffalo", "Rochester", "Syracuse", "Utica"]
+        assert path_cost(path) == 192.0
+
+    def test_unreachable_nyc_albany(self, graph):
+        path, expanded = a_star_search(graph, "New York City", "Albany")
+        assert path is None
+
+    def test_source_equals_goal(self, graph):
+        path, expanded = a_star_search(graph, "Rochester", "Rochester")
+        assert path_to_city_sequence("Rochester", path) == ["Rochester"]
+        assert path_cost(path) == 0.0
+
+    def test_parallel_edges_nyc_yonkers(self, graph):
+        path, expanded = a_star_search(graph, "New York City", "Yonkers")
+        assert path_to_city_sequence("New York City", path) == ["New York City", "Yonkers"]
+        assert path_cost(path) == 20.0
+
+    def test_sink_node_amityville(self, graph):
+        path, expanded = a_star_search(graph, "Amityville", "Hempstead")
+        assert path_to_city_sequence("Amityville", path) == ["Amityville", "Hempstead"]
+        assert path_cost(path) == 24.0
+
+    def test_invalid_start(self, graph):
+        path, expanded = a_star_search(graph, "Atlantis", "Buffalo")
+        assert path is None
+        assert expanded == 0
+
+    def test_a_star_expands_leq_ucs(self, graph):
+        """
+        A* with an admissible heuristic should never expand MORE nodes
+        than UCS for the same query.  We check the longest route
+        (Buffalo→Utica) where the difference is most visible.
+        """
+        _, ucs_exp = uniform_cost_search(graph, "Buffalo", "Utica")
+        _, ast_exp = a_star_search(graph, "Buffalo", "Utica")
+        assert ast_exp <= ucs_exp, (
+            f"A* expanded {ast_exp} nodes vs UCS {ucs_exp} — heuristic may be broken"
+        )
